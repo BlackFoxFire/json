@@ -1,6 +1,15 @@
 <?php
 
+/**
+ * Json.php
+ * @Auteur: Christophe Dufour
+ * 
+ * Facilite l'utilisation du format JSON
+ */
+
 namespace Blackfox\Json;
+
+use Blackfox\Json\Enums\AccessMode;
 
 class Json implements \ArrayAccess
 {
@@ -10,7 +19,7 @@ class Json implements \ArrayAccess
      */
 
     // Un tableau associatif représentant un code json
-    protected array $json;
+    protected array $json = [];
 
     /**
      * Constructeur
@@ -45,24 +54,56 @@ class Json implements \ArrayAccess
     /**
      * Modifie la valeur de $json
      * 
-     * @param array|object|string $json
+     * @param array|object $json
      */
-    public function setJson(array|object|string $json): void
+    public function setJson(array|object $json): void
     {
         if(is_array($json)) {
             $this->json = $json;
         }
-        elseif(is_object($json)) {
+        
+        if(is_object($json)) {
             $this->json = (array) $json;
-        }
-        else {
-            $this->json = json_decode($json, true);
         }
     }
 
     /**
      * Méthodes
      */
+
+    /**
+     * Décode un chaine json en un tableau associatif
+     * Retourne true en cas de succés, sinon false
+     * 
+     * @param string $json, la chaine json encodée
+     * 
+     * @return bool
+     */
+    public function decode(string $json): bool
+    {
+        $decodedJson = json_decode($json, true);
+
+        if($decodedJson != null) {
+            $this->json = $decodedJson;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Retourne une chaine encodée json
+     * 
+     * @param bool $format
+     *  - Si false, Retourne une chaine de caractère brute
+     *  - Si true, Retourne une chaine de caractère structurée
+     * 
+     * @return string|false
+     */
+    public function encode(mixed $json, bool $format = false): string|false
+    {
+        return !$format ? json_encode($json) : json_encode($json, JSON_PRETTY_PRINT);
+    }
 
     /**
      * Retourne l'objet sous forme de chaine de caractère structurée
@@ -121,43 +162,62 @@ class Json implements \ArrayAccess
     }
 
     /**
-     * Lit le contenu d'un fichier JSON
+     * Ouvre un fichier en lecture ou en écriture
      * 
-     * @param $file, le fichier JSON à lire
+     * @param string $filename, $mode
+     * 
+     * @return mixed
      */
-    public function fread($file): void
+    protected function open(string $filename, AccessMode $mode = AccessMode::Reading): mixed
     {
-        if(is_readable($file) && is_file($file)) {
-            if($handle = fopen($file, "r")) {
-                $contends = fread($handle, filesize($file));
-                fclose($handle);
-    
-                $this->setJson($contends);
+        if(empty($filename)) {
+            throw new \ValueError("Argument #1 (\$filename) ne peut pas être vide");
+        }
+
+        if($mode == AccessMode::Reading) {
+            if(!is_readable($filename) || !is_file($filename)) {
+                throw new \ErrorException("Echec du chargement du fichier $filename", 0, E_USER_ERROR);            
             }
         }
-        else {
-            throw new \Exception("Le fichier $file est introuvable!");
+
+        if(!is_writable(dirname($filename)) && $mode == AccessMode::Writing) {
+            throw new \ErrorException("Echec de l'écriture du fichier $filename", 0, E_USER_ERROR);            
         }
+
+        return fopen($filename, $mode->value);
+    }
+
+    /**
+     * Lit le contenu d'un fichier JSON
+     * 
+     * @param $filename, le fichier JSON à lire
+     */
+    public function load(string $filename): bool
+    {
+        if($handle = $this->open($filename, AccessMode::Reading)) {
+            $contends = fread($handle, filesize($filename));
+            fclose($handle);
+            return $this->decode($contends);
+        }
+
+        return false;
     }
 
     /**
      * Ecrit le contenu d'un fichier JSON
      * 
-     *  @param $file, le fichier JSON à écrire
+     *  @param $filename, le fichier JSON à écrire
      */
-    public function fwrite($file): int|false
+    public function save($filename): bool
     {
-        if(is_writable(dirname($file))) {
-            if($handle = fopen($file, "w")) {
-                $return = fwrite($handle, $this);
-                fclose($handle);
-            }
+        if($handle = $this->open($filename, AccessMode::Writing)) {
+            $return = fwrite($handle, $this);
+            fclose($handle);
     
-            return $return;
+            return true;
         }
-        else {
-            throw new \Exception("Le dossier " . dirname($file) . " n'est pas accessible en écriture!");    
-        }
+
+        return false;
     }
 
 }
